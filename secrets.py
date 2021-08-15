@@ -1,0 +1,3 @@
+
+spotify_token = "BQDQ0tlrfQMVbztFIp2ORYh2j8IEhkx4uNqTevvoRWvVdPcg6afqE2AhRgZ-1cAGVeH8oCrrppDZkMtRrjmgRX7BaKYAgiWePMcQYKJEgd03LBcvgORED8FYQdkivB9Kw0ij9vdJlCwiOpBBwL09RNPNFeb_Iw"
+spotify_playlist_id = "6JSXxGEkBjlchm02505tqt"
