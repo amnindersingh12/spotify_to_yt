@@ -8,7 +8,7 @@ import requests
 import youtube_dl
 
 from exceptions import ResponseException
-
+from secrets import spotify_token, spotify_playlist_id
 
 
 class CreatePlaylist:
@@ -27,7 +27,7 @@ class CreatePlaylist:
         client_secrets_file = "new.json"
 
         # Get credentials and create an API client
-        scopes = ["https://www.googleapis.com/auth/youtube.readonly"]
+        scopes = ["https://www.googleapis.com/auth/youtube","https://www.googleapis.com/auth/youtube.force-ssl","https://www.googleapis.com/auth/youtube.readonly"]
         flow = google_auth_oauthlib.flow.InstalledAppFlow.from_client_secrets_file(
             client_secrets_file, scopes)
         credentials = flow.run_console()
@@ -40,62 +40,80 @@ class CreatePlaylist:
 
     def create_playlist(self):
         """Create A New Playlist"""
-    
 
         request = self.youtube_client.playlists().insert(
             part="snippet,status",
             body={
-            "snippet": {
-                "title": "XO ke Ganne",
-                "description": "This is a sample playlist description.",
-                "tags": [
-                "sample playlist",
-                "API call"
-                ],
-                "defaultLanguage": "en"
-            },
-            "status": {
-                "privacyStatus": "public"
-            }
+                "snippet": {
+                    "title": "XO ke Ganne",
+                    "description": "This is a sample playlist description.",
+                    "tags": [
+                        "sample playlist",
+                        "API call"
+                    ],
+                    "defaultLanguage": "en"
+                },
+                "status": {
+                    "privacyStatus": "public"
+                }
             }
         )
         response = request.execute()
         playlist_id = response['id']
-      
+
         return playlist_id
-    song_name="Starboy The Weeknd"
-    def search_song_on_yt(self, song_name):
-   
-        request = self.youtube_client.search().list(
-            part="snippet",
-            order="viewCount",
-            q=self.song_name
+
+    def get_song_name(self):
+
+        query = "https://api.spotify.com/v1/playlists/{}/tracks?market=ES&fields=items(track(name%2Cartists(name)))&limit=59&offset=41".format(
+            spotify_playlist_id)
+        response = requests.get(
+            query,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": "Bearer {}".format(spotify_token)
+            }
         )
-        response = request.execute()
-        videoID = str(response['items'][0]["id"]["videoId"])
-        print(videoID)
-        return videoID
+        response_json = response.json()
+        play_id="PLvcDEv0bQcCg9eR1_ijfTKHAMc_FPKtXH"
+        # self.create_playlist()
+        
 
+        for i in range(len(response_json['items'])):
+            song_name = response_json['items'][i]['track']['name']
+            artist_name = response_json['items'][i]['track']['artists'][0]['name']
+            name = song_name + " " + artist_name
+            print(name)
+            request = self.youtube_client.search().list(
+                part="snippet",
+                order="viewCount",
+                q=name
+            )
+            response = request.execute()
+            videoID = str(response['items'][0]["id"]["videoId"])
 
-    def add_video_to_playlist(self):
-        self.search_song_on_yt(song_name)
-        request = self.youtube_client.playlistItems().insert(
-            part="snippet",
-            body={
-            "snippet": {
-                "playlistId": self.playlist_id,
-                "resourceId": {
-                "kind": "youtube#video",
-                "videoId": self.videoID
+            
+            request = self.youtube_client.playlistItems().insert(
+                part="snippet",
+                body={
+                    "snippet": {
+                        "playlistId": play_id,
+                        "resourceId": {
+                            "kind": "youtube#video",
+                            "videoId": videoID
+                        }
+                    }
                 }
-            }
-            }
-        )
-        response = request.execute()
+            )
+            response = request.execute()
 
         print(response)
 
 
+
+
+         
+
 if __name__ == '__main__':
     cp = CreatePlaylist()
-    cp.add_video_to_playlist()
+    cp.get_song_name()
