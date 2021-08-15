@@ -1,2 +1,2 @@
-spotify_token = "BQAEAz_irJR_NXrwrDi-3DfLuJvKGA-0yCD27NHRPzt6v2qHMPyz4K8Rlqru4IKR792uk1iJ5UcRm9QkikdMONsF6N9SpVkLuUX834nEufsnlQtFwHsyWG5u6kELMq3oaXsWC-1aE7HVtBY87JG1KBHzncyW2g"
+spotify_token = "Your Spotify Token"
 spotify_playlist_id = "6JSXxGEkBjlchm02505tqt"
