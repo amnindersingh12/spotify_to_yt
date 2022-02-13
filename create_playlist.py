@@ -1,3 +1,10 @@
+#  Author:      Amninder Singh
+#
+#  This is a simple little module I wrote to make my life easier.
+#  I didn't find anything like it over the internet, so I wrote my own.
+#  I wrote this to create a playlist from a list of songs from a spotify playlist.
+
+
 import json
 import os
 
@@ -7,19 +14,24 @@ import googleapiclient.errors
 import requests
 import youtube_dl
 
-from exceptions import ResponseException
+# adding spotify credentials
 from secrets import spotify_token, spotify_playlist_id
 
 
 class CreatePlaylist:
+
+    """
+    This is the main class that will be used to create a playlist.
+    """
+
     def __init__(self):
         self.youtube_client = self.get_youtube_client()
         self.all_song_info = {}
 
     def get_youtube_client(self):
         """ Log Into Youtube, Copied from Youtube Data API """
-        # Disable OAuthlib's HTTPS verification when running locally.
-        # *DO NOT* leave this option enabled in production.
+
+        # Disabling OAuthlib's HTTPS verification
         os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
 
         api_service_name = "youtube"
@@ -27,7 +39,8 @@ class CreatePlaylist:
         client_secrets_file = "new.json"
 
         # Get credentials and create an API client
-        scopes = ["https://www.googleapis.com/auth/youtube","https://www.googleapis.com/auth/youtube.force-ssl","https://www.googleapis.com/auth/youtube.readonly"]
+        scopes = ["https://www.googleapis.com/auth/youtube", "https://www.googleapis.com/auth/youtube.force-ssl",
+                  "https://www.googleapis.com/auth/youtube.readonly"]
         flow = google_auth_oauthlib.flow.InstalledAppFlow.from_client_secrets_file(
             client_secrets_file, scopes)
         credentials = flow.run_console()
@@ -39,13 +52,18 @@ class CreatePlaylist:
         return youtube_client
 
     def create_playlist(self):
-        """Create A New Playlist"""
+        """
+        To Create A New Playlist, calling the Youtube API's playlist.insert method. 
+        """
 
         request = self.youtube_client.playlists().insert(
             part="snippet,status",
             body={
                 "snippet": {
+
+                    # title of the playlist
                     "title": "XO ke Ganne",
+
                     "description": "This is a sample playlist description.",
                     "tags": [
                         "sample playlist",
@@ -58,15 +76,24 @@ class CreatePlaylist:
                 }
             }
         )
-        response = request.execute()
-        playlist_id = response['id']
 
+        # executing the above request and storing the response
+        response = request.execute()
+
+        # returning the playlist ID
+        playlist_id = response['id']
         return playlist_id
 
     def get_song_name(self):
+        """
+        This function will get the song name from the youtube link.
+        """
 
+        # api call to get the song name
         query = "https://api.spotify.com/v1/playlists/{}/tracks?market=ES&fields=items(track(name%2Cartists(name)))&limit=59&offset=41".format(
             spotify_playlist_id)
+
+        # getting the response
         response = requests.get(
             query,
             headers={
@@ -74,25 +101,36 @@ class CreatePlaylist:
                 "Authorization": "Bearer {}".format(spotify_token)
             }
         )
-        response_json = response.json()
-        play_id="PLvcDEv0bQcCg9eR1_ijfTKHAMc_FPKtXH"
-        # self.create_playlist()
-        
 
+        response_json = response.json()
+
+        # playlist id where the songs will be added
+        play_id = "PLvcDEv0bQcCg9eR1_ijfTKHAMc_FPKtXH"
+
+        # uncomment this if running the code for the first time to create a new playlist
+        # self.create_playlist()
+
+        # looping
         for i in range(len(response_json['items'])):
             song_name = response_json['items'][i]['track']['name']
             artist_name = response_json['items'][i]['track']['artists'][0]['name']
             name = song_name + " " + artist_name
+
+            # printing the name of the song and the artist
             print(name)
+
+            # searching the song and sorting the result based on the viewcount
             request = self.youtube_client.search().list(
                 part="snippet",
                 order="viewCount",
                 q=name
             )
+
+            # saving the videoId of the song
             response = request.execute()
             videoID = str(response['items'][0]["id"]["videoId"])
 
-            
+            # adding the song video to the playlist
             request = self.youtube_client.playlistItems().insert(
                 part="snippet",
                 body={
@@ -109,10 +147,6 @@ class CreatePlaylist:
 
         print(response)
 
-
-
-
-         
 
 if __name__ == '__main__':
     cp = CreatePlaylist()
