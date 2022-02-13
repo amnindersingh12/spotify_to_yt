@@ -3,7 +3,7 @@ A simple script that takes your spotify playlist and generate a Youtube playlist
 
 # Link to the demo 
 
-[![Everything Is AWESOME](https://lh3.googleusercontent.com/pw/AM-JKLXSLI0hQJY4O29V_cLLP3n452ZeR8vbMRmGPSw-63wpeOIVMbEZFEXwpHC8wTwpUGDkYnIoSvtCjkWk3Ic-n58aKz6O6gLPB11P2Vq3fpa6bD2eDRbpCuSoq_yzMSv3m8q1bEwmTujno86KaaD_mlqCLw=w1316-h836-no?authuser=0)](https://youtu.be/9yDr8gOOADE-Y?t=35s "Everything Is AWESOME")
+[![Everything Is AWESOME](https://i3.ytimg.com/vi/9yDr8gOOADE/maxresdefault.jpg)](https://youtu.be/9yDr8gOOADE-Y?t=35s "Everything Is AWESOME")
 
 
 ## Table of Contents
@@ -38,9 +38,8 @@ A simple script that takes your spotify playlist and generate a Youtube playlist
 
 
 ## ToDo
-* Testing
-* Add Liked Songs Support
 * Add Error Handling
+* Add Liked Songs Support
 
 ## Troubleshooting
 * Spotify and Youtube Oauth token expires very quickly, If you come across a `KeyError` this could
