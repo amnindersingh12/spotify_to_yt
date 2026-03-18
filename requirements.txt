@@ -8,7 +8,7 @@ googleapis-common-protos==1.53.0
 httplib2==0.19.1
 oauthlib==3.2.1
 protobuf==5.29.6
-pyasn1==0.4.8
+pyasn1==0.6.3
 pyasn1-modules==0.2.8
 pytz==2021.1
 requestes==0.0.1
