@@ -11,7 +11,11 @@ import googleapiclient.discovery
 import requests
 
 # adding spotify credentials
-from secrets import spotify_token, spotify_playlist_id
+try:
+    from secrets import spotify_token, spotify_playlist_id
+except ImportError:
+    print("Please create a secrets.py file with spotify_token and spotify_playlist_id variables.")
+    exit(1)
 
 
 class CreatePlaylist:
@@ -37,6 +41,10 @@ class CreatePlaylist:
         
         # youtube api key here
         client_secrets_file = "client_secret.json"
+
+        if not os.path.exists(client_secrets_file):
+            print(f"Error: {client_secrets_file} not found. Please download it from Google Cloud Console.")
+            exit(1)
 
         # Get credentials and create an API client
         scopes = ["https://www.googleapis.com/auth/youtube", "https://www.googleapis.com/auth/youtube.force-ssl",
@@ -84,17 +92,21 @@ class CreatePlaylist:
             print(f"Error creating playlist: {e}")
             return None
 
-    def get_songs_from_spotify(self):
+    def get_songs_from_spotify(self, source_type="playlist"):
         """
-        Fetches all songs from the specified Spotify playlist handling pagination.
+        Fetches all songs from the specified Spotify playlist or 'Liked Songs' handling pagination.
         """
         songs = []
         limit = 50
         offset = 0
         
         while True:
-            # api call to get the song name
-            query = f"https://api.spotify.com/v1/playlists/{spotify_playlist_id}/tracks?fields=items(track(name%2Cartists(name)))&limit={limit}&offset={offset}"
+            if source_type == "liked":
+                # endpoint for user's liked songs
+                query = f"https://api.spotify.com/v1/me/tracks?limit={limit}&offset={offset}"
+            else:
+                # endpoint for a specific playlist
+                query = f"https://api.spotify.com/v1/playlists/{spotify_playlist_id}/tracks?fields=items(track(name%2Cartists(name)))&limit={limit}&offset={offset}"
 
             # getting the response
             response = requests.get(
@@ -105,7 +117,10 @@ class CreatePlaylist:
                 }
             )
 
-            if response.status_code != 200:
+            if response.status_code == 401:
+                print("Error: Spotify token is invalid or expired. Please update it in secrets.py.")
+                break
+            elif response.status_code != 200:
                 print(f"Error fetching from Spotify: {response.text}")
                 break
 
@@ -131,13 +146,13 @@ class CreatePlaylist:
                 
         return songs
 
-    def sync_playlist(self):
+    def sync_playlist(self, source_type="playlist"):
         """
         Fetches songs from Spotify, creates a YouTube playlist, and adds videos to it.
         """
-        songs = self.get_songs_from_spotify()
+        songs = self.get_songs_from_spotify(source_type=source_type)
         if not songs:
-            print("No songs found in Spotify playlist or could not authenticate.")
+            print("No songs found in Spotify or could not authenticate.")
             return
 
         print(f"Found {len(songs)} songs to sync.")
@@ -195,5 +210,16 @@ class CreatePlaylist:
 
 
 if __name__ == '__main__':
-    cp = CreatePlaylist()
-    cp.sync_playlist()
+    print("Welcome to Spotify to YouTube Sync!")
+    print("1. Sync a specific playlist (ID from secrets.py)")
+    print("2. Sync your Liked Songs")
+    choice = input("Enter your choice (1 or 2): ").strip()
+
+    source = "playlist"
+    playlist_name = "My Spotify Playlist Sync"
+    if choice == '2':
+        source = "liked"
+        playlist_name = "My Spotify Liked Songs"
+
+    cp = CreatePlaylist(youtube_playlist_name=playlist_name)
+    cp.sync_playlist(source_type=source)

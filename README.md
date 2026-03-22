@@ -38,8 +38,8 @@ A simple script that takes your spotify playlist and generate a Youtube playlist
 
 
 ## ToDo
-* Add Error Handling
-* Add Liked Songs Support
+* ~~Add Error Handling~~ (Done)
+* ~~Add Liked Songs Support~~ (Done)
 
 ## Troubleshooting
 * Spotify and Youtube Oauth token expires very quickly, If you come across a `KeyError` this could
