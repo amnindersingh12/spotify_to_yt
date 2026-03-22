@@ -5,14 +5,10 @@
 #  I wrote this to create a playlist from a list of songs from a spotify playlist.
 
 
-import json
 import os
-
 import google_auth_oauthlib.flow
 import googleapiclient.discovery
-import googleapiclient.errors
 import requests
-import youtube_dl
 
 # adding spotify credentials
 from secrets import spotify_token, spotify_playlist_id
@@ -24,7 +20,9 @@ class CreatePlaylist:
     This is the main class that will be used to create a playlist.
     """
 
-    def __init__(self):
+    def __init__(self, youtube_playlist_name="My Spotify Sync", youtube_playlist_desc="Synced from Spotify"):
+        self.youtube_playlist_name = youtube_playlist_name
+        self.youtube_playlist_desc = youtube_playlist_desc
         self.youtube_client = self.get_youtube_client()
         self.all_song_info = {}
 
@@ -58,98 +56,144 @@ class CreatePlaylist:
         To Create A New Playlist, calling the Youtube API's playlist.insert method. 
         """
 
-        request = self.youtube_client.playlists().insert(
-            part="snippet,status",
-            body={
-                "snippet": {
-
-                    # title of the playlist
-                    "title": "XO ke Ganne",
-
-                    "description": "This is a sample playlist description.",
-                    "tags": [
-                        "sample playlist",
-                        "API call"
-                    ],
-                    "defaultLanguage": "en"
-                },
-                "status": {
-                    "privacyStatus": "public"
-                }
-            }
-        )
-
-        # executing the above request and storing the response
-        response = request.execute()
-
-        # returning the playlist ID
-        playlist_id = response['id']
-        return playlist_id
-
-    def get_song_name(self):
-        """
-        This function will get the song name from the youtube link.
-        """
-
-        # api call to get the song name
-        query = "https://api.spotify.com/v1/playlists/{}/tracks?market=ES&fields=items(track(name%2Cartists(name)))&limit=59&offset=41".format(
-            spotify_playlist_id)
-
-        # getting the response
-        response = requests.get(
-            query,
-            headers={
-                "Content-Type": "application/json",
-                "Authorization": "Bearer {}".format(spotify_token)
-            }
-        )
-
-        response_json = response.json()
-
-        # playlist id where the songs will be added
-        play_id = "PLvcDEv0bQcCg9eR1_ijfTKHAMc_FPKtXH"
-
-        # uncomment this if running the code for the first time to create a new playlist
-        # self.create_playlist()
-
-        # looping
-        for i in range(len(response_json['items'])):
-            song_name = response_json['items'][i]['track']['name']
-            artist_name = response_json['items'][i]['track']['artists'][0]['name']
-            name = song_name + " " + artist_name
-
-            # printing the name of the song and the artist
-            print(name)
-
-            # searching the song and sorting the result based on the viewcount
-            request = self.youtube_client.search().list(
-                part="snippet",
-                order="viewCount",
-                q=name
-            )
-
-            # saving the videoId of the song
-            response = request.execute()
-            videoID = str(response['items'][0]["id"]["videoId"])
-
-            # adding the song video to the playlist
-            request = self.youtube_client.playlistItems().insert(
-                part="snippet",
+        try:
+            request = self.youtube_client.playlists().insert(
+                part="snippet,status",
                 body={
                     "snippet": {
-                        "playlistId": play_id,
-                        "resourceId": {
-                            "kind": "youtube#video",
-                            "videoId": videoID
-                        }
+                        # title of the playlist
+                        "title": self.youtube_playlist_name,
+                        "description": self.youtube_playlist_desc,
+                        "tags": [
+                            "spotify sync",
+                            "API call"
+                        ],
+                        "defaultLanguage": "en"
+                    },
+                    "status": {
+                        "privacyStatus": "public"
                     }
                 }
             )
-            response = request.execute()
 
-        print(response)
+            # executing the above request and storing the response
+            response = request.execute()
+            # returning the playlist ID
+            return response['id']
+        except Exception as e:
+            print(f"Error creating playlist: {e}")
+            return None
+
+    def get_songs_from_spotify(self):
+        """
+        Fetches all songs from the specified Spotify playlist handling pagination.
+        """
+        songs = []
+        limit = 50
+        offset = 0
+        
+        while True:
+            # api call to get the song name
+            query = f"https://api.spotify.com/v1/playlists/{spotify_playlist_id}/tracks?fields=items(track(name%2Cartists(name)))&limit={limit}&offset={offset}"
+
+            # getting the response
+            response = requests.get(
+                query,
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {spotify_token}"
+                }
+            )
+
+            if response.status_code != 200:
+                print(f"Error fetching from Spotify: {response.text}")
+                break
+
+            response_json = response.json()
+            items = response_json.get('items', [])
+            
+            if not items:
+                break
+                
+            for item in items:
+                track = item.get('track')
+                if track:
+                    song_name = track.get('name', '')
+                    artists = track.get('artists', [])
+                    artist_name = artists[0].get('name', '') if artists else ''
+                    songs.append(f"{song_name} {artist_name}".strip())
+
+            offset += limit
+            
+            # If we got fewer than limit, we've reached the end
+            if len(items) < limit:
+                break
+                
+        return songs
+
+    def sync_playlist(self):
+        """
+        Fetches songs from Spotify, creates a YouTube playlist, and adds videos to it.
+        """
+        songs = self.get_songs_from_spotify()
+        if not songs:
+            print("No songs found in Spotify playlist or could not authenticate.")
+            return
+
+        print(f"Found {len(songs)} songs to sync.")
+        
+        # create the youtube playlist
+        play_id = self.create_playlist()
+        if not play_id:
+            print("Failed to create YouTube playlist. Exiting.")
+            return
+            
+        print(f"Created YouTube Playlist with ID: {play_id}")
+
+        for name in songs:
+            print(f"Searching for: {name}")
+
+            try:
+                # searching the song and sorting the result based on the viewcount
+                request = self.youtube_client.search().list(
+                    part="snippet",
+                    order="viewCount",
+                    q=name,
+                    maxResults=1,
+                    type="video"
+                )
+
+                # saving the videoId of the song
+                response = request.execute()
+                items = response.get('items', [])
+                
+                if not items:
+                    print(f"  -> Could not find video for: {name}")
+                    continue
+                    
+                videoID = str(items[0]["id"]["videoId"])
+
+                # adding the song video to the playlist
+                add_request = self.youtube_client.playlistItems().insert(
+                    part="snippet",
+                    body={
+                        "snippet": {
+                            "playlistId": play_id,
+                            "resourceId": {
+                                "kind": "youtube#video",
+                                "videoId": videoID
+                            }
+                        }
+                    }
+                )
+                add_request.execute()
+                print(f"  -> Added to playlist.")
+            except Exception as e:
+                print(f"  -> Error processing song '{name}': {e}")
+
+        print("Finished syncing playlist!")
 
 
 if __name__ == '__main__':
     cp = CreatePlaylist()
-    cp.get_song_name()
+    cp.sync_playlist()
