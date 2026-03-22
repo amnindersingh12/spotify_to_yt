@@ -1,225 +1,232 @@
-#  Author:      Amninder Singh
-#
-#  This is a simple little module I wrote to make my life easier.
-#  I didn't find anything like it over the internet, so I wrote my own.
-#  I wrote this to create a playlist from a list of songs from a spotify playlist.
-
-
 import os
+import threading
+import customtkinter as ctk
+from dotenv import load_dotenv
+
 import google_auth_oauthlib.flow
 import googleapiclient.discovery
-import requests
+import spotipy
+from spotipy.oauth2 import SpotifyOAuth
 
-# adding spotify credentials
-try:
-    from secrets import spotify_token, spotify_playlist_id
-except ImportError:
-    print("Please create a secrets.py file with spotify_token and spotify_playlist_id variables.")
-    exit(1)
+# Load environment variables from .env
+load_dotenv()
 
+class SpotifyToYoutubeGUI(ctk.CTk):
+    def __init__(self):
+        super().__init__()
 
-class CreatePlaylist:
+        self.title("Spotify to YouTube API Sync")
+        self.geometry("600x650")
+        
+        # Grid layout
+        self.grid_columnconfigure(0, weight=1)
 
-    """
-    This is the main class that will be used to create a playlist.
-    """
+        # Title Label
+        self.title_label = ctk.CTkLabel(self, text="Spotify to YouTube Sync", font=ctk.CTkFont(size=24, weight="bold"))
+        self.title_label.grid(row=0, column=0, padx=20, pady=(20, 10))
 
-    def __init__(self, youtube_playlist_name="My Spotify Sync", youtube_playlist_desc="Synced from Spotify"):
-        self.youtube_playlist_name = youtube_playlist_name
-        self.youtube_playlist_desc = youtube_playlist_desc
-        self.youtube_client = self.get_youtube_client()
-        self.all_song_info = {}
+        # YouTube Options Frame
+        self.yt_frame = ctk.CTkFrame(self)
+        self.yt_frame.grid(row=1, column=0, padx=20, pady=10, sticky="ew")
+        
+        self.yt_label = ctk.CTkLabel(self.yt_frame, text="YouTube Settings", font=ctk.CTkFont(size=16, weight="bold"))
+        self.yt_label.grid(row=0, column=0, padx=10, pady=10, sticky="w")
+        
+        self.playlist_name_entry = ctk.CTkEntry(self.yt_frame, placeholder_text="New YouTube Playlist Name", width=300)
+        self.playlist_name_entry.grid(row=1, column=0, padx=10, pady=(0, 10), sticky="w")
+        self.playlist_name_entry.insert(0, "My Spotify Sync")
+
+        self.playlist_desc_entry = ctk.CTkEntry(self.yt_frame, placeholder_text="Playlist Description", width=300)
+        self.playlist_desc_entry.grid(row=2, column=0, padx=10, pady=(0, 10), sticky="w")
+        self.playlist_desc_entry.insert(0, "Synced via App")
+
+        # Spotify Options Frame
+        self.sp_frame = ctk.CTkFrame(self)
+        self.sp_frame.grid(row=2, column=0, padx=20, pady=10, sticky="ew")
+
+        self.sp_label = ctk.CTkLabel(self.sp_frame, text="Spotify Source", font=ctk.CTkFont(size=16, weight="bold"))
+        self.sp_label.grid(row=0, column=0, padx=10, pady=10, sticky="w")
+
+        self.sync_mode = ctk.StringVar(value="liked")
+        
+        self.radio_liked = ctk.CTkRadioButton(self.sp_frame, text="Sync Liked Songs", variable=self.sync_mode, value="liked", command=self.toggle_playlist_entry)
+        self.radio_liked.grid(row=1, column=0, padx=10, pady=(0, 10), sticky="w")
+
+        self.radio_playlist = ctk.CTkRadioButton(self.sp_frame, text="Sync Specific Playlist", variable=self.sync_mode, value="playlist", command=self.toggle_playlist_entry)
+        self.radio_playlist.grid(row=2, column=0, padx=10, pady=(0, 10), sticky="w")
+
+        self.sp_playlist_id_entry = ctk.CTkEntry(self.sp_frame, placeholder_text="Spotify Playlist ID", width=300)
+        self.sp_playlist_id_entry.grid(row=3, column=0, padx=35, pady=(0, 10), sticky="w")
+        self.sp_playlist_id_entry.configure(state="disabled")
+
+        # Check for environment variables
+        self.check_env_frame = ctk.CTkFrame(self, fg_color="transparent")
+        self.check_env_frame.grid(row=3, column=0, padx=20, pady=5, sticky="ew")
+
+        env_status = self.check_credentials()
+        self.env_label = ctk.CTkLabel(self.check_env_frame, text=env_status, text_color="green" if "Ready" in env_status else "red")
+        self.env_label.grid(row=0, column=0, sticky="w")
+
+        # Sync Button
+        self.sync_button = ctk.CTkButton(self, text="START SYNC", font=ctk.CTkFont(size=16, weight="bold"), height=50, command=self.start_sync_thread)
+        self.sync_button.grid(row=4, column=0, padx=20, pady=10, sticky="ew")
+
+        # Log Box
+        self.log_box = ctk.CTkTextbox(self, height=150)
+        self.log_box.grid(row=5, column=0, padx=20, pady=10, sticky="nsew")
+        self.grid_rowconfigure(5, weight=1)
+
+    def check_credentials(self):
+        missing = []
+        if not os.environ.get("SPOTIPY_CLIENT_ID"): missing.append("Spotify Client ID")
+        if not os.environ.get("SPOTIPY_CLIENT_SECRET"): missing.append("Spotify Client Secret")
+        if not os.path.exists("client_secret.json"): missing.append("client_secret.json")
+
+        if missing:
+            return f"Missing config: {', '.join(missing)}\nPlease update .env and restart."
+        return "Credentials Status: Ready"
+
+    def toggle_playlist_entry(self):
+        if self.sync_mode.get() == "playlist":
+            self.sp_playlist_id_entry.configure(state="normal")
+        else:
+            self.sp_playlist_id_entry.configure(state="disabled")
+
+    def log(self, message):
+        self.log_box.insert("end", message + "\n")
+        self.log_box.see("end")
+        self.update()
+
+    def start_sync_thread(self):
+        self.sync_button.configure(state="disabled", text="SYNCING...")
+        self.log_box.delete("0.0", "end")
+        threading.Thread(target=self.run_sync, daemon=True).start()
+
+    def run_sync(self):
+        try:
+            youtube_client = self.get_youtube_client()
+            if not youtube_client:
+                self.log("Failed to authenticate YouTube.")
+                self.sync_button.configure(state="normal", text="START SYNC")
+                return
+
+            sp = spotipy.Spotify(auth_manager=SpotifyOAuth(
+                scope="user-library-read playlist-read-private",
+                redirect_uri="http://localhost:8888/callback"
+            ))
+            
+            songs = self.get_songs_from_spotify(sp)
+            if not songs:
+                self.log("No songs found or Spotify authentication failed.")
+                self.sync_button.configure(state="normal", text="START SYNC")
+                return
+
+            self.log(f"Found {len(songs)} songs to sync.")
+            
+            play_id = self.create_youtube_playlist(youtube_client)
+            if not play_id:
+                self.log("Failed to create YouTube playlist.")
+                self.sync_button.configure(state="normal", text="START SYNC")
+                return
+                
+            self.log(f"Created YouTube Playlist ID: {play_id}")
+
+            for name in songs:
+                self.log(f"Searching for: {name}")
+                try:
+                    request = youtube_client.search().list(part="snippet", order="viewCount", q=name, maxResults=1, type="video")
+                    response = request.execute()
+                    items = response.get('items', [])
+                    
+                    if not items:
+                        self.log(f" -> Could not find video for: {name}")
+                        continue
+                        
+                    videoID = str(items[0]["id"]["videoId"])
+
+                    add_request = youtube_client.playlistItems().insert(
+                        part="snippet",
+                        body={"snippet": {"playlistId": play_id, "resourceId": {"kind": "youtube#video", "videoId": videoID}}}
+                    )
+                    add_request.execute()
+                    self.log(f" -> Added to playlist.")
+                except Exception as e:
+                    self.log(f" -> Error processing: {e}")
+
+            self.log("\nFINISHED SYNCING PLAYLIST!")
+        except Exception as e:
+            self.log(f"\nCRITICAL ERROR: {e}")
+            
+        self.sync_button.configure(state="normal", text="START SYNC")
 
     def get_youtube_client(self):
-        """ Log Into Youtube, Copied from Youtube Data API """
-
-        # Disabling OAuthlib's HTTPS verification
+        self.log("Authenticating with YouTube...")
         os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
-
-        api_service_name = "youtube"
-        api_version = "v3"
-        
-        # youtube api key here
-        client_secrets_file = "client_secret.json"
-
-        if not os.path.exists(client_secrets_file):
-            print(f"Error: {client_secrets_file} not found. Please download it from Google Cloud Console.")
-            exit(1)
-
-        # Get credentials and create an API client
-        scopes = ["https://www.googleapis.com/auth/youtube", "https://www.googleapis.com/auth/youtube.force-ssl",
-                  "https://www.googleapis.com/auth/youtube.readonly"]
-        flow = google_auth_oauthlib.flow.InstalledAppFlow.from_client_secrets_file(
-            client_secrets_file, scopes)
-        credentials = flow.run_console()
-
-        # from the Youtube DATA API
-        youtube_client = googleapiclient.discovery.build(
-            api_service_name, api_version, credentials=credentials)
-
-        return youtube_client
-
-    def create_playlist(self):
-        """
-        To Create A New Playlist, calling the Youtube API's playlist.insert method. 
-        """
-
         try:
-            request = self.youtube_client.playlists().insert(
-                part="snippet,status",
-                body={
-                    "snippet": {
-                        # title of the playlist
-                        "title": self.youtube_playlist_name,
-                        "description": self.youtube_playlist_desc,
-                        "tags": [
-                            "spotify sync",
-                            "API call"
-                        ],
-                        "defaultLanguage": "en"
-                    },
-                    "status": {
-                        "privacyStatus": "public"
-                    }
-                }
-            )
-
-            # executing the above request and storing the response
-            response = request.execute()
-            # returning the playlist ID
-            return response['id']
+            scopes = ["https://www.googleapis.com/auth/youtube", "https://www.googleapis.com/auth/youtube.force-ssl", "https://www.googleapis.com/auth/youtube.readonly"]
+            flow = google_auth_oauthlib.flow.InstalledAppFlow.from_client_secrets_file("client_secret.json", scopes)
+            credentials = flow.run_local_server(port=0)
+            return googleapiclient.discovery.build("youtube", "v3", credentials=credentials)
         except Exception as e:
-            print(f"Error creating playlist: {e}")
+            self.log(f"YouTube Auth Error: {e}")
             return None
 
-    def get_songs_from_spotify(self, source_type="playlist"):
-        """
-        Fetches all songs from the specified Spotify playlist or 'Liked Songs' handling pagination.
-        """
+    def create_youtube_playlist(self, client):
+        title = self.playlist_name_entry.get().strip() or "My Spotify Sync"
+        desc = self.playlist_desc_entry.get().strip() or "Synced via App"
+        
+        try:
+            request = client.playlists().insert(
+                part="snippet,status",
+                body={"snippet": {"title": title, "description": desc, "tags": ["spotify sync"], "defaultLanguage": "en"}, "status": {"privacyStatus": "public"}}
+            )
+            return request.execute()['id']
+        except Exception as e:
+            self.log(f"Error creating playlist: {e}")
+            return None
+
+    def get_songs_from_spotify(self, sp):
+        self.log("Authenticating and fetching from Spotify...")
         songs = []
         limit = 50
         offset = 0
-        
+        mode = self.sync_mode.get()
+        playlist_id = self.sp_playlist_id_entry.get().strip()
+
+        if mode == "playlist" and not playlist_id:
+            self.log("Please enter a valid Spotify Playlist ID")
+            return []
+
         while True:
-            if source_type == "liked":
-                # endpoint for user's liked songs
-                query = f"https://api.spotify.com/v1/me/tracks?limit={limit}&offset={offset}"
-            else:
-                # endpoint for a specific playlist
-                query = f"https://api.spotify.com/v1/playlists/{spotify_playlist_id}/tracks?fields=items(track(name%2Cartists(name)))&limit={limit}&offset={offset}"
+            try:
+                if mode == "liked":
+                    results = sp.current_user_saved_tracks(limit=limit, offset=offset)
+                else:
+                    results = sp.playlist_tracks(playlist_id, limit=limit, offset=offset)
 
-            # getting the response
-            response = requests.get(
-                query,
-                headers={
-                    "Content-Type": "application/json",
-                    "Authorization": f"Bearer {spotify_token}"
-                }
-            )
+                items = results.get('items', [])
+                if not items:
+                    break
+                    
+                for item in items:
+                    track = item.get('track')
+                    if track:
+                        song_name = track.get('name', '')
+                        artists = track.get('artists', [])
+                        artist_name = artists[0].get('name', '') if artists else ''
+                        songs.append(f"{song_name} {artist_name}".strip())
 
-            if response.status_code == 401:
-                print("Error: Spotify token is invalid or expired. Please update it in secrets.py.")
-                break
-            elif response.status_code != 200:
-                print(f"Error fetching from Spotify: {response.text}")
-                break
-
-            response_json = response.json()
-            items = response_json.get('items', [])
-            
-            if not items:
-                break
-                
-            for item in items:
-                track = item.get('track')
-                if track:
-                    song_name = track.get('name', '')
-                    artists = track.get('artists', [])
-                    artist_name = artists[0].get('name', '') if artists else ''
-                    songs.append(f"{song_name} {artist_name}".strip())
-
-            offset += limit
-            
-            # If we got fewer than limit, we've reached the end
-            if len(items) < limit:
+                offset += limit
+                if len(items) < limit:
+                    break
+            except Exception as e:
+                self.log(f"Spotify API Error: {e}")
                 break
                 
         return songs
 
-    def sync_playlist(self, source_type="playlist"):
-        """
-        Fetches songs from Spotify, creates a YouTube playlist, and adds videos to it.
-        """
-        songs = self.get_songs_from_spotify(source_type=source_type)
-        if not songs:
-            print("No songs found in Spotify or could not authenticate.")
-            return
-
-        print(f"Found {len(songs)} songs to sync.")
-        
-        # create the youtube playlist
-        play_id = self.create_playlist()
-        if not play_id:
-            print("Failed to create YouTube playlist. Exiting.")
-            return
-            
-        print(f"Created YouTube Playlist with ID: {play_id}")
-
-        for name in songs:
-            print(f"Searching for: {name}")
-
-            try:
-                # searching the song and sorting the result based on the viewcount
-                request = self.youtube_client.search().list(
-                    part="snippet",
-                    order="viewCount",
-                    q=name,
-                    maxResults=1,
-                    type="video"
-                )
-
-                # saving the videoId of the song
-                response = request.execute()
-                items = response.get('items', [])
-                
-                if not items:
-                    print(f"  -> Could not find video for: {name}")
-                    continue
-                    
-                videoID = str(items[0]["id"]["videoId"])
-
-                # adding the song video to the playlist
-                add_request = self.youtube_client.playlistItems().insert(
-                    part="snippet",
-                    body={
-                        "snippet": {
-                            "playlistId": play_id,
-                            "resourceId": {
-                                "kind": "youtube#video",
-                                "videoId": videoID
-                            }
-                        }
-                    }
-                )
-                add_request.execute()
-                print(f"  -> Added to playlist.")
-            except Exception as e:
-                print(f"  -> Error processing song '{name}': {e}")
-
-        print("Finished syncing playlist!")
-
-
-if __name__ == '__main__':
-    print("Welcome to Spotify to YouTube Sync!")
-    print("1. Sync a specific playlist (ID from secrets.py)")
-    print("2. Sync your Liked Songs")
-    choice = input("Enter your choice (1 or 2): ").strip()
-
-    source = "playlist"
-    playlist_name = "My Spotify Playlist Sync"
-    if choice == '2':
-        source = "liked"
-        playlist_name = "My Spotify Liked Songs"
-
-    cp = CreatePlaylist(youtube_playlist_name=playlist_name)
-    cp.sync_playlist(source_type=source)
+if __name__ == "__main__":
+    ctk.set_appearance_mode("System")
+    ctk.set_default_color_theme("blue")
+    app = SpotifyToYoutubeGUI()
+    app.mainloop()

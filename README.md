@@ -1,57 +1,43 @@
 # ytspotify
-A simple script that takes your spotify playlist and generate a Youtube playlist based on the song in your Spotify playlist.
-
-# Link to the demo 
-
-[![Everything Is AWESOME](https://i3.ytimg.com/vi/9yDr8gOOADE/maxresdefault.jpg)](https://youtu.be/9yDr8gOOADE-Y?t=35s "Everything Is AWESOME")
-
+A clean, GUI-based Python script that takes your Spotify playlist (or Liked Songs) and perfectly clones them into a newly generated YouTube playlist.
 
 ## Table of Contents
 * [Technologies](#Technologies)
 * [Setup](#LocalSetup)
-* [ToDo](#ToDo)
 * [Troubleshooting](#Troubleshooting)
 
 ## Technologies
+* [CustomTkinter] (For modern Graphics User Interface)
+* [Spotipy] (For automatic Spotify OAuth and Pagination)
 * [Youtube Data API v3]
 * [Spotify Web API]
-* [Requests Library]
+* [Python Dotenv]
 
 ## LocalSetup
-1) Install All Dependencies   
+1) **Install All Dependencies:**   
 `pip3 install -r requirements.txt`
 
-2) Collect You Spotify User ID and Oauth Token From Spotfiy and add it to secrets.py file
-    * To Collect your User ID, Log into Spotify then go here: [Account Overview] and its your **Username**
-   
-    * To Collect your Oauth Token, Visit this url here: [Get Oauth] and click the **Get Token** button
+2) **Create Your Spotify Credentials (`.env`)**
+    * We use Spotipy to securely manage OAuth, which means you never have to manually regenerate expiring tokens!
+    * Go to your [Spotify Developer Dashboard](https://developer.spotify.com/dashboard/).
+    * Create an app, and edit its settings so its "Redirect URI" is exactly `http://localhost:8888/callback`.
+    * Copy `.env.example` into a new file called `.env`.
+    * Paste your new App's `Client ID` and `Client Secret` into the `.env` file.
 
+3) **Enable Oauth For Youtube (`client_secrets.json`)**   
+    * You need to authorize your app with Google to create YouTube playlists for you. Just follow the guide here [Set Up Youtube Oauth](https://developers.google.com/youtube/v3/getting-started) to generate a credential file! 
+    * Download your `client_secret.json` from the Google Cloud Console and place it in the same directory as this project.
 
-3) Enable Oauth For Youtube and download the client_secrets.json   
-    * Ok this part is tricky but its worth it! Just follow the guide here [Set Up Youtube Oauth] ! 
-    If you are having issues check this out [Oauth Setup 2] and this one too [Oauth Setup 3] 
-
-4) Run the File  
+4) **Run the File**  
 `python3 create_playlist.py`   
-    * you'll immediately see `Please visit this URL to authorize this application: <some long url>`
-    * click on it and log into your Google Account to collect the `authorization code`
-
-
-## ToDo
-* ~~Add Error Handling~~ (Done)
-* ~~Add Liked Songs Support~~ (Done)
+    * A sleek GUI window will pop up.
+    * You will be immediately directed to your browser to log into Google and Spotify once safely.
+    * Click `START SYNC` to clone your music library automatically!
 
 ## Troubleshooting
-* Spotify and Youtube Oauth token expires very quickly, If you come across a `KeyError` this could
-be caused by an expired token and if you saw a `quotaExceeded` error that mean you have reached max number of requests that you can make through a single project. So just refer back to step 3 in local setup, and generate a new
-token!  
-
+* **QuotaExceeded**: This means you have reached the maximum number of requests that you can make through a single Google project per day. You can either wait until tomorrow or create a new project in the Google Cloud Console.
 
    [Youtube Data API v3]: <https://developers.google.com/youtube/v3>
    [Spotify Web API]: <https://developer.spotify.com/documentation/web-api/>
-   [Requests Library ]: <https://requests.readthedocs.io/en/master/>
-   [Account Overview]: <https://www.spotify.com/us/account/overview/>
-   [Get Oauth]: <https://developer.spotify.com/console/post-playlists/>
-   [Set Up Youtube Oauth]: <https://developers.google.com/youtube/v3/getting-started/>
-   [Oauth Setup 2]:<https://stackoverflow.com/questions/11485271/google-oauth-2-authorization-error-redirect-uri-mismatch/>
-   [Oauth Setup 3]:<https://github.com/googleapis/google-api-python-client/blob/master/docs/client-secrets.md/>
+   [Spotipy]: <https://spotipy.readthedocs.io/en/2.22.1/>
+   [CustomTkinter]: <https://customtkinter.tomschimansky.com/>
