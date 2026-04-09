@@ -1,0 +1,612 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>My Project Hub</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --panel: #111827;
+      --panel-soft: #1f2937;
+      --text: #e5e7eb;
+      --muted: #9ca3af;
+      --accent: #22c55e;
+      --accent-2: #38bdf8;
+      --danger: #ef4444;
+      --border: #334155;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      color: var(--text);
+      background: radial-gradient(circle at top right, #1e293b 0%, var(--bg) 42%), var(--bg);
+      min-height: 100vh;
+    }
+
+    .container {
+      width: min(1100px, 92vw);
+      margin: 0 auto;
+      padding: 24px 0 48px;
+    }
+
+    header {
+      margin-bottom: 24px;
+      border: 1px solid var(--border);
+      background: linear-gradient(135deg, #111827, #0b1220);
+      border-radius: 14px;
+      padding: 20px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(1.6rem, 4vw, 2.4rem);
+      letter-spacing: 0.5px;
+    }
+
+    .subtitle {
+      margin-top: 8px;
+      color: var(--muted);
+    }
+
+    .status {
+      margin-top: 10px;
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 360px 1fr;
+      gap: 18px;
+    }
+
+    .panel {
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: rgba(17, 24, 39, 0.85);
+      backdrop-filter: blur(3px);
+      padding: 16px;
+    }
+
+    .panel h2 {
+      margin-top: 0;
+      margin-bottom: 12px;
+      font-size: 1.1rem;
+    }
+
+    .field {
+      margin-bottom: 12px;
+    }
+
+    label {
+      display: block;
+      font-size: 0.9rem;
+      margin-bottom: 6px;
+      color: var(--muted);
+    }
+
+    input, textarea {
+      width: 100%;
+      padding: 10px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--panel-soft);
+      color: var(--text);
+      outline: none;
+    }
+
+    textarea {
+      min-height: 80px;
+      resize: vertical;
+    }
+
+    .actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 10px;
+    }
+
+    button {
+      border: 0;
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 120ms ease, filter 120ms ease;
+    }
+
+    button:hover {
+      transform: translateY(-1px);
+      filter: brightness(1.05);
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #052e16;
+    }
+
+    .btn-secondary {
+      background: var(--accent-2);
+      color: #082f49;
+    }
+
+    .btn-danger {
+      background: var(--danger);
+      color: white;
+    }
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 14px;
+    }
+
+    .split-cards {
+      display: grid;
+      gap: 12px;
+    }
+
+    .section-title {
+      margin: 4px 0 8px;
+      color: #93c5fd;
+      font-size: 0.95rem;
+      letter-spacing: 0.4px;
+      text-transform: uppercase;
+    }
+
+    .pill {
+      display: inline-block;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      font-size: 0.76rem;
+      padding: 3px 8px;
+      color: #bfdbfe;
+      background: rgba(56, 189, 248, 0.08);
+    }
+
+    .tiny {
+      color: var(--muted);
+      font-size: 0.82rem;
+    }
+
+    .github-meta {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+      margin-top: 2px;
+    }
+
+    .inline {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .inline input {
+      flex: 1;
+    }
+
+    .card {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px;
+      background: #0b1220;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .card h3 {
+      margin: 0;
+      font-size: 1rem;
+    }
+
+    .meta {
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+
+    .desc {
+      margin: 4px 0;
+      color: #cbd5e1;
+      font-size: 0.92rem;
+      line-height: 1.35;
+    }
+
+    .card .actions {
+      margin-top: auto;
+    }
+
+    .empty {
+      color: var(--muted);
+      border: 1px dashed var(--border);
+      border-radius: 10px;
+      padding: 18px;
+      text-align: center;
+    }
+
+    .link {
+      color: #7dd3fc;
+      text-decoration: none;
+      font-weight: 600;
+    }
+
+    .link:hover {
+      text-decoration: underline;
+    }
+
+    .error {
+      color: #fca5a5;
+      font-size: 0.85rem;
+      margin-top: 8px;
+      min-height: 1.2em;
+    }
+
+    @media (max-width: 860px) {
+      .layout {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>My Project Hub</h1>
+      <div class="subtitle">One page to track and open your projects from your Oracle VM.</div>
+      <div id="hostStatus" class="status">Hosting status: unknown</div>
+    </header>
+
+    <div class="layout">
+      <section class="panel">
+        <h2>GitHub Sync</h2>
+        <div class="field">
+          <label for="githubUser">GitHub Username</label>
+          <div class="inline">
+            <input id="githubUser" placeholder="your-github-username">
+            <button id="syncGithubBtn" class="btn-secondary">Sync</button>
+          </div>
+        </div>
+        <div class="tiny">Public repositories are fetched from GitHub API and shown on this page.</div>
+        <div id="githubError" class="error"></div>
+
+        <hr style="border: 0; border-top: 1px solid var(--border); margin: 16px 0;">
+
+        <h2>Add A Project</h2>
+        <div class="field">
+          <label for="name">Project Name</label>
+          <input id="name" placeholder="spotify_to_yt">
+        </div>
+        <div class="field">
+          <label for="url">Project URL (optional)</label>
+          <input id="url" placeholder="http://<vm-ip>:8080 or repo link">
+        </div>
+        <div class="field">
+          <label for="stack">Stack / Type</label>
+          <input id="stack" placeholder="Python, GUI, OAuth">
+        </div>
+        <div class="field">
+          <label for="desc">Description</label>
+          <textarea id="desc" placeholder="What this project does..."></textarea>
+        </div>
+        <div class="actions">
+          <button id="saveBtn" class="btn-primary">Save Project</button>
+          <button id="seedBtn" class="btn-secondary">Reset Default</button>
+          <button id="clearBtn" class="btn-danger">Clear Custom</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>All Projects</h2>
+        <div class="split-cards">
+          <div>
+            <div class="section-title">GitHub Repositories</div>
+            <div id="githubCards" class="cards"></div>
+          </div>
+          <div>
+            <div class="section-title">Manual Projects</div>
+            <div id="cards" class="cards"></div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    const STORAGE_KEY = "oracle_project_hub_v1";
+    const GITHUB_STORAGE_KEY = "oracle_project_hub_github_v1";
+    const GITHUB_USER_STORAGE_KEY = "oracle_project_hub_github_user_v1";
+    const DEFAULT_GITHUB_USER = "amnindersingh12";
+
+    const defaultProjects = [
+      {
+        id: "spotify_to_yt",
+        name: "spotify_to_yt",
+        url: "",
+        stack: "Python, CustomTkinter, Spotify OAuth, YouTube Data API",
+        desc: "Desktop app that syncs Spotify liked songs or playlists into a new YouTube playlist.",
+        pinned: true
+      }
+    ];
+
+    const cardsEl = document.getElementById("cards");
+    const githubCardsEl = document.getElementById("githubCards");
+    const hostStatus = document.getElementById("hostStatus");
+    const githubUserEl = document.getElementById("githubUser");
+    const githubErrorEl = document.getElementById("githubError");
+
+    function loadProjects() {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(defaultProjects));
+        return [...defaultProjects];
+      }
+
+      try {
+        const parsed = JSON.parse(raw);
+        if (!Array.isArray(parsed)) {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(defaultProjects));
+          return [...defaultProjects];
+        }
+
+        const hasDefault = parsed.some(p => p && p.id === "spotify_to_yt");
+        if (!hasDefault) {
+          parsed.unshift(defaultProjects[0]);
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
+        }
+
+        return parsed;
+      } catch (_) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(defaultProjects));
+        return [...defaultProjects];
+      }
+    }
+
+    function saveProjects(projects) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(projects));
+    }
+
+    function loadGithubRepos() {
+      const raw = localStorage.getItem(GITHUB_STORAGE_KEY);
+      if (!raw) {
+        return [];
+      }
+
+      try {
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch (_) {
+        return [];
+      }
+    }
+
+    function saveGithubRepos(repos) {
+      localStorage.setItem(GITHUB_STORAGE_KEY, JSON.stringify(repos));
+    }
+
+    function getSavedGithubUser() {
+      return localStorage.getItem(GITHUB_USER_STORAGE_KEY) || DEFAULT_GITHUB_USER;
+    }
+
+    function setSavedGithubUser(user) {
+      localStorage.setItem(GITHUB_USER_STORAGE_KEY, user);
+    }
+
+    function render() {
+      const projects = loadProjects();
+      const githubRepos = loadGithubRepos();
+      cardsEl.innerHTML = "";
+      githubCardsEl.innerHTML = "";
+
+      if (!projects.length) {
+        cardsEl.innerHTML = '<div class="empty">No projects yet. Add one from the left panel.</div>';
+      }
+
+      projects.forEach((p) => {
+        const card = document.createElement("article");
+        card.className = "card";
+
+        const safeName = escapeHtml(p.name || "Untitled Project");
+        const safeStack = escapeHtml(p.stack || "No stack set");
+        const safeDesc = escapeHtml(p.desc || "No description");
+
+        let linkHtml = '<span class="meta">No URL configured</span>';
+        if (p.url && p.url.trim()) {
+          const safeUrl = escapeAttr(p.url.trim());
+          linkHtml = `<a href="${safeUrl}" target="_blank" rel="noreferrer">Open Project</a>`;
+        }
+
+        const removeButton = p.pinned
+          ? ""
+          : `<button data-remove="${escapeAttr(p.id)}" class="btn-danger">Remove</button>`;
+
+        card.innerHTML = `
+          <h3>${safeName}</h3>
+          <div class="meta">${safeStack}</div>
+          <p class="desc">${safeDesc}</p>
+          <div class="actions">
+            ${linkHtml}
+            ${removeButton}
+          </div>
+        `;
+
+        cardsEl.appendChild(card);
+      });
+
+      document.querySelectorAll("button[data-remove]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const removeId = btn.getAttribute("data-remove");
+          const next = loadProjects().filter(p => p.id !== removeId);
+          saveProjects(next);
+          render();
+        });
+      });
+
+      if (!githubRepos.length) {
+        githubCardsEl.innerHTML = '<div class="empty">No GitHub repos loaded yet. Enter your username and click Sync.</div>';
+      }
+
+      githubRepos.forEach((repo) => {
+        const card = document.createElement("article");
+        card.className = "card";
+
+        const safeName = escapeHtml(repo.name || "repo");
+        const safeDesc = escapeHtml(repo.description || "No description");
+        const safeLanguage = escapeHtml(repo.language || "Unknown");
+        const safeStars = Number(repo.stargazers_count || 0);
+        const safeUpdated = escapeHtml(new Date(repo.updated_at).toLocaleDateString());
+        const htmlUrl = escapeAttr(repo.html_url || "#");
+
+        card.innerHTML = `
+          <h3>${safeName}</h3>
+          <div class="github-meta">
+            <span class="pill">${safeLanguage}</span>
+            <span class="tiny">Stars: ${safeStars}</span>
+            <span class="tiny">Updated: ${safeUpdated}</span>
+          </div>
+          <p class="desc">${safeDesc}</p>
+          <div class="actions">
+            <a class="link" href="${htmlUrl}" target="_blank" rel="noreferrer">Open GitHub Repo</a>
+          </div>
+        `;
+
+        githubCardsEl.appendChild(card);
+      });
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+    }
+
+    function escapeAttr(value) {
+      return escapeHtml(value).replaceAll("`", "&#96;");
+    }
+
+    function idFromName(name) {
+      return String(name).trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || `p_${Date.now()}`;
+    }
+
+    document.getElementById("saveBtn").addEventListener("click", () => {
+      const name = document.getElementById("name").value.trim();
+      const url = document.getElementById("url").value.trim();
+      const stack = document.getElementById("stack").value.trim();
+      const desc = document.getElementById("desc").value.trim();
+
+      if (!name) {
+        alert("Project Name is required");
+        return;
+      }
+
+      const id = idFromName(name);
+      const projects = loadProjects();
+      const existingIndex = projects.findIndex(p => p.id === id && !p.pinned);
+
+      const nextProject = { id, name, url, stack, desc, pinned: false };
+
+      if (existingIndex >= 0) {
+        projects[existingIndex] = nextProject;
+      } else {
+        projects.push(nextProject);
+      }
+
+      saveProjects(projects);
+      render();
+    });
+
+    document.getElementById("seedBtn").addEventListener("click", () => {
+      saveProjects([...defaultProjects]);
+      render();
+    });
+
+    document.getElementById("clearBtn").addEventListener("click", () => {
+      const pinned = loadProjects().filter(p => p.pinned);
+      saveProjects(pinned);
+      render();
+    });
+
+    async function fetchGithubRepos(user) {
+      githubErrorEl.textContent = "";
+      const endpoint = `https://api.github.com/users/${encodeURIComponent(user)}/repos?per_page=100&sort=updated`;
+      const response = await fetch(endpoint, {
+        headers: {
+          "Accept": "application/vnd.github+json"
+        }
+      });
+
+      if (!response.ok) {
+        if (response.status === 404) {
+          throw new Error("GitHub user not found");
+        }
+        if (response.status === 403) {
+          throw new Error("GitHub API rate limit reached. Try again later.");
+        }
+        throw new Error(`GitHub API error (${response.status})`);
+      }
+
+      const repos = await response.json();
+      if (!Array.isArray(repos)) {
+        throw new Error("Unexpected GitHub API response");
+      }
+
+      const filtered = repos
+        .filter(repo => !repo.fork)
+        .sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
+
+      saveGithubRepos(filtered);
+      setSavedGithubUser(user);
+      render();
+      return filtered.length;
+    }
+
+    document.getElementById("syncGithubBtn").addEventListener("click", async () => {
+      const user = githubUserEl.value.trim();
+      if (!user) {
+        githubErrorEl.textContent = "Enter a GitHub username first.";
+        return;
+      }
+
+      const syncBtn = document.getElementById("syncGithubBtn");
+      syncBtn.disabled = true;
+      syncBtn.textContent = "Syncing...";
+
+      try {
+        const count = await fetchGithubRepos(user);
+        githubErrorEl.style.color = "#86efac";
+        githubErrorEl.textContent = `Loaded ${count} repositories from ${user}.`;
+      } catch (err) {
+        githubErrorEl.style.color = "#fca5a5";
+        githubErrorEl.textContent = err.message || "Failed to sync GitHub projects.";
+      } finally {
+        syncBtn.disabled = false;
+        syncBtn.textContent = "Sync";
+      }
+    });
+
+    hostStatus.textContent = `Hosting status: serving from ${window.location.origin}`;
+
+    githubUserEl.value = getSavedGithubUser();
+
+    render();
+
+    // Auto-sync once on load so GitHub projects appear without extra clicks.
+    fetchGithubRepos(githubUserEl.value.trim()).catch((err) => {
+      githubErrorEl.style.color = "#fca5a5";
+      githubErrorEl.textContent = err.message || "Could not load GitHub projects automatically.";
+      render();
+    });
+  </script>
+</body>
+</html>

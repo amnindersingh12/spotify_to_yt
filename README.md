@@ -31,8 +31,25 @@ A clean, GUI-based Python script that takes your Spotify playlist (or Liked Song
 4) **Run the File**  
 `python3 create_playlist.py`   
     * A sleek GUI window will pop up.
-    * You will be immediately directed to your browser to log into Google and Spotify once safely.
-    * Click `START SYNC` to clone your music library automatically!
+    * Click `Connect Spotify` and complete OAuth in your browser.
+    * Click `Connect YouTube` and complete OAuth in your browser.
+    * Confirm both account status labels turn green.
+    * Click `START SYNC` to clone your music library automatically.
+
+## Account Login UI
+* Spotify and YouTube sign-in are now explicit steps in the app UI.
+* The app shows which Spotify and YouTube accounts are currently connected.
+* `START SYNC` stays disabled until both accounts are connected.
+* You can reconnect either account at any time with the reconnect buttons.
+
+## Oracle VM Hosting (Project Hub)
+* The site files live on the VM Desktop at `/home/ubuntu/Desktop/alreadytaken.me`.
+* The VM now serves a project hub at `/projects/`.
+* The Spotify-to-YouTube app has its own project page at `/projects/spotify-to-yt/`.
+* The live browser dashboard is at `/projects/spotify-to-yt/live/`.
+* The root URL redirects to the projects hub.
+* To expose the site publicly, point `alreadytaken.me` to this VM's public IP and keep nginx on port 80.
+* The old `8080` Python server can still be used for quick internal testing, but the nginx site is the public entry point.
 
 ## Troubleshooting
 * **QuotaExceeded**: This means you have reached the maximum number of requests that you can make through a single Google project per day. You can either wait until tomorrow or create a new project in the Google Cloud Console.
