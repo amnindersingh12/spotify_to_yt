@@ -7,6 +7,8 @@ A Spotify-to-YouTube sync tool with two interfaces:
 * [Technologies](#Technologies)
 * [Local Setup](#LocalSetup)
 * [Live Web Setup](#LiveWebSetup)
+* [Video Walkthrough](#VideoWalkthrough)
+* [Updated Instructions](#UpdatedInstructions)
 * [Troubleshooting](#Troubleshooting)
 
 ## Technologies
@@ -66,6 +68,18 @@ This mode is for hosting on your VM with nginx proxying to Flask.
 * Click `Connect Spotify` or `Connect YouTube`.
 * The modal lets you enter missing OAuth settings on the fly.
 * After saving, the dashboard opens the OAuth popup and updates account state when login completes.
+
+## VideoWalkthrough
+* Setup and demo video: https://youtu.be/9yDr8gOOADE
+
+## UpdatedInstructions
+1) Open the live page: `https://alreadytaken.me/projects/spotify-to-yt/live/`
+2) Click `Connect Spotify` and fill the modal if credentials are missing.
+3) In Spotify Developer Dashboard, ensure this Redirect URI is allowlisted exactly:
+    * `https://alreadytaken.me/api/oauth/spotify/callback`
+4) Click `Connect YouTube` and upload or paste `client_secret.json` in the modal.
+5) Complete both OAuth popups and confirm both accounts show as connected.
+6) Start sync with your playlist options.
 
 ## Account Login UI
 * Spotify and YouTube sign-in are now explicit steps in the app UI.
