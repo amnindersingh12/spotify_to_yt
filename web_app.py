@@ -1,16 +1,112 @@
 import queue
 import json
+import os
+import secrets
 import threading
 import uuid
+from pathlib import Path
 
 from flask import Flask, jsonify, redirect, render_template_string, request, Response, stream_with_context
+from dotenv import load_dotenv
+
+import google_auth_oauthlib.flow
+import googleapiclient.discovery
+import spotipy
+from spotipy.oauth2 import SpotifyOAuth
 
 from sync_engine import SpotifyToYoutubeEngine, SyncConfig
+
+load_dotenv()
 
 app = Flask(__name__)
 engine = SpotifyToYoutubeEngine()
 jobs = {}
 job_lock = threading.Lock()
+oauth_sessions = {}
+oauth_lock = threading.Lock()
+APP_ROOT = Path(__file__).resolve().parent
+DOTENV_PATH = APP_ROOT / ".env"
+YOUTUBE_SECRET_PATH = APP_ROOT / "client_secret.json"
+
+
+def _public_base_url():
+  configured = os.environ.get("PUBLIC_BASE_URL")
+  if configured:
+    return configured.rstrip("/")
+
+  proto = request.headers.get("X-Forwarded-Proto", "").split(",", 1)[0].strip()
+  host = request.headers.get("X-Forwarded-Host") or request.headers.get("Host")
+  if proto and host:
+    return f"{proto}://{host}".rstrip("/")
+
+  return request.url_root.rstrip("/")
+
+
+def _callback_url(service):
+    return f"{_public_base_url()}/api/oauth/{service}/callback"
+
+
+def _write_env_file(updates):
+    current = {}
+    if DOTENV_PATH.exists():
+        for line in DOTENV_PATH.read_text().splitlines():
+            if not line.strip() or line.lstrip().startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            current[key.strip()] = value.strip()
+
+    current.update({key: value for key, value in updates.items() if value is not None})
+    lines = []
+    for key in ("SPOTIPY_CLIENT_ID", "SPOTIPY_CLIENT_SECRET", "SPOTIPY_REDIRECT_URI"):
+        if key in current and current[key] != "":
+            lines.append(f"{key}={current[key]}")
+    DOTENV_PATH.write_text("\n".join(lines) + ("\n" if lines else ""))
+
+
+def _oauth_done_page(service, ok, message):
+    title = "Connected" if ok else "Connection Failed"
+    return render_template_string(
+        """
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }}</title>
+  <style>
+    body { margin: 0; font-family: Arial, sans-serif; background: #07101d; color: #eef4ff; display: grid; place-items: center; min-height: 100vh; }
+    .card { width: min(520px, 92vw); background: #0c1427; border: 1px solid #23324d; border-radius: 20px; padding: 24px; box-shadow: 0 20px 60px rgba(0,0,0,0.32); }
+    h1 { margin-top: 0; font-size: 1.6rem; }
+    p { color: #9fb0d0; line-height: 1.6; }
+    .ok { color: #86efac; }
+    .bad { color: #fca5a5; }
+    code { word-break: break-word; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1 class="{{ 'ok' if ok else 'bad' }}">{{ title }} for {{ service }}</h1>
+    <p>{{ message }}</p>
+    <p>This window will close automatically.</p>
+  </div>
+  <script>
+    (function () {
+      const payload = {{ payload | safe }};
+      if (window.opener) {
+        window.opener.postMessage(payload, window.location.origin);
+      }
+      setTimeout(() => window.close(), 900);
+    })();
+  </script>
+</body>
+</html>
+        """,
+        title=title,
+        service=service.capitalize(),
+        ok=ok,
+        message=message,
+        payload=json.dumps({"type": "oauth-complete", "service": service, "ok": ok, "message": message}),
+    )
 
 
 @app.get("/api/state")
@@ -25,20 +121,130 @@ def api_state():
   })
 
 
+@app.get("/api/config")
+def api_config():
+  return jsonify({
+    "public_base_url": _public_base_url(),
+    "spotify_redirect_uri": _callback_url("spotify"),
+    "youtube_redirect_uri": _callback_url("youtube"),
+  })
+
+
+@app.post("/api/settings")
+def api_settings():
+  data = request.get_json(force=True, silent=True) or {}
+  updates = {
+    "SPOTIPY_CLIENT_ID": data.get("spotify_client_id") or os.environ.get("SPOTIPY_CLIENT_ID"),
+    "SPOTIPY_CLIENT_SECRET": data.get("spotify_client_secret") or os.environ.get("SPOTIPY_CLIENT_SECRET"),
+    "SPOTIPY_REDIRECT_URI": data.get("spotify_redirect_uri") or os.environ.get("SPOTIPY_REDIRECT_URI") or _callback_url("spotify"),
+  }
+
+  _write_env_file(updates)
+  os.environ.update({key: value for key, value in updates.items() if value})
+
+  youtube_secret_json = data.get("youtube_client_secret_json")
+  if youtube_secret_json:
+    YOUTUBE_SECRET_PATH.write_text(youtube_secret_json.strip() + "\n")
+
+  return jsonify({
+    "ok": True,
+    "missing": engine.check_credentials(),
+  })
+
+
 @app.post("/api/connect/<service>")
 def api_connect(service):
+  if service not in {"spotify", "youtube"}:
+    return jsonify({"error": "Unknown service"}), 404
+
+  missing = engine.check_credentials()
+  if service == "spotify" and ("Spotify Client ID" in missing or "Spotify Client Secret" in missing):
+    return jsonify({
+      "error": "Spotify credentials are missing",
+      "missing": missing,
+      "redirect_uri": _callback_url("spotify"),
+    }), 400
+
+  if service == "youtube" and "client_secret.json" in missing:
+    return jsonify({
+      "error": "YouTube client_secret.json is missing",
+      "missing": missing,
+      "redirect_uri": _callback_url("youtube"),
+    }), 400
+
+  if service == "spotify":
+    callback_url = _callback_url("spotify")
+    state_token = secrets.token_urlsafe(16)
+    auth_manager = SpotifyOAuth(
+      scope="user-library-read playlist-read-private playlist-read-collaborative",
+      redirect_uri=callback_url,
+      client_id=os.environ.get("SPOTIPY_CLIENT_ID"),
+      client_secret=os.environ.get("SPOTIPY_CLIENT_SECRET"),
+      cache_path=str(APP_ROOT / ".spotify-token-cache"),
+      show_dialog=True,
+    )
+    auth_url = auth_manager.get_authorize_url(state=state_token)
+    with oauth_lock:
+      oauth_sessions[state_token] = {"service": service, "auth_manager": auth_manager}
+    return jsonify({"service": service, "auth_url": auth_url, "redirect_uri": callback_url})
+
+  callback_url = _callback_url("youtube")
+  flow = google_auth_oauthlib.flow.InstalledAppFlow.from_client_secrets_file(
+    str(YOUTUBE_SECRET_PATH),
+    scopes=[
+      "https://www.googleapis.com/auth/youtube",
+      "https://www.googleapis.com/auth/youtube.force-ssl",
+    ],
+  )
+  flow.redirect_uri = callback_url
+  auth_url, state_token = flow.authorization_url(prompt="consent", access_type="offline", include_granted_scopes="true")
+  with oauth_lock:
+    oauth_sessions[state_token] = {"service": service, "flow": flow}
+  return jsonify({"service": service, "auth_url": auth_url, "redirect_uri": callback_url})
+
+
+@app.get("/api/oauth/<service>/callback")
+def api_oauth_callback(service):
+  if service not in {"spotify", "youtube"}:
+    return jsonify({"error": "Unknown service"}), 404
+
+  error = request.args.get("error")
+  if error:
+    return _oauth_done_page(service, False, f"{service.capitalize()} login was cancelled: {error}")
+
+  state = request.args.get("state")
+  code = request.args.get("code")
+  if not state or not code:
+    return _oauth_done_page(service, False, "Missing OAuth state or authorization code.")
+
+  with oauth_lock:
+    session = oauth_sessions.pop(state, None)
+
+  if not session or session.get("service") != service:
+    return _oauth_done_page(service, False, "OAuth session expired. Please try again.")
+
   try:
     if service == "spotify":
-      account_name = engine.connect_spotify()
-      return jsonify({"service": service, "connected": True, "account_name": account_name})
+      auth_manager = session["auth_manager"]
+      auth_manager.get_access_token(code, as_dict=True)
+      spotify_client = spotipy.Spotify(auth_manager=auth_manager)
+      profile = spotify_client.current_user()
+      account_name = profile.get("display_name") or profile.get("id") or "Unknown"
+      engine.set_spotify_client(spotify_client, account_name)
+      return _oauth_done_page(service, True, f"Connected as {account_name}.")
 
-    if service == "youtube":
-      account_name = engine.connect_youtube()
-      return jsonify({"service": service, "connected": True, "account_name": account_name})
-
-    return jsonify({"error": "Unknown service"}), 404
+    flow = session["flow"]
+    flow.fetch_token(code=code)
+    youtube_client = googleapiclient.discovery.build("youtube", "v3", credentials=flow.credentials)
+    channel_response = youtube_client.channels().list(part="snippet", mine=True, maxResults=1).execute()
+    items = channel_response.get("items", [])
+    account_name = "Unknown"
+    if items:
+      account_name = items[0].get("snippet", {}).get("title") or account_name
+    engine.set_youtube_client(youtube_client, account_name)
+    return _oauth_done_page(service, True, f"Connected as {account_name}.")
   except Exception as exc:
-    return jsonify({"service": service, "connected": False, "error": str(exc)}), 500
+    return _oauth_done_page(service, False, str(exc))
 
 DASHBOARD_TEMPLATE = """
 <!doctype html>
@@ -168,8 +374,58 @@ DASHBOARD_TEMPLATE = """
     .small { color: var(--muted); font-size: 0.92rem; line-height: 1.5; }
     .warning { color: #fbbf24; }
     .error { color: #fca5a5; }
+    .banner {
+      display: none;
+      margin-top: 12px;
+      padding: 12px 14px;
+      border-radius: 16px;
+      border: 1px solid rgba(251, 191, 36, 0.35);
+      background: rgba(251, 191, 36, 0.08);
+      color: #fde68a;
+      line-height: 1.6;
+    }
+    .banner strong { color: #fff7cd; }
+    .modal-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(3, 7, 18, 0.72);
+      backdrop-filter: blur(8px);
+      align-items: center;
+      justify-content: center;
+      z-index: 50;
+      padding: 20px;
+    }
+    .modal-card {
+      width: min(720px, 96vw);
+      max-height: 90vh;
+      overflow: auto;
+      background: linear-gradient(180deg, rgba(12,20,39,0.98), rgba(8,13,25,0.99));
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      box-shadow: var(--shadow);
+      padding: 22px;
+    }
+    .modal-card h2 { margin-top: 0; }
+    .modal-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .modal-grid .field:last-child { grid-column: 1 / -1; }
+    .modal-note {
+      color: var(--muted);
+      line-height: 1.55;
+      margin: 8px 0 14px;
+    }
+    .file-path {
+      margin-top: 8px;
+      color: #cbd5e1;
+      font-size: 0.9rem;
+    }
     @media (max-width: 920px) {
       .hero-grid, .grid, .accounts { grid-template-columns: 1fr; }
+      .modal-grid { grid-template-columns: 1fr; }
       .grid { grid-template-columns: 1fr; }
       .log { height: 320px; }
     }
@@ -196,6 +452,7 @@ DASHBOARD_TEMPLATE = """
           </div>
           <div class="progress"><div class="bar" id="bar"></div></div>
           <div class="metrics" id="metrics">Added: 0 | Skipped: 0 | Errors: 0</div>
+          <div class="banner" id="configBanner"></div>
         </div>
       </div>
       <div class="actions">
@@ -276,6 +533,44 @@ DASHBOARD_TEMPLATE = """
     </div>
   </div>
 
+  <div class="modal-backdrop" id="configModal">
+    <div class="modal-card">
+      <h2>Configure login on the fly</h2>
+      <p class="modal-note" id="configModalNote">Enter the missing OAuth details here, save them to the VM, then the browser login popup will open automatically.</p>
+      <div class="small" style="margin-bottom: 14px;">
+        Spotify Web API checklist: create an app in the Spotify Developer Dashboard, copy Client ID and Client Secret, and add the exact Redirect URI shown below to your app Redirect URI allowlist.
+      </div>
+      <div class="modal-grid">
+        <div class="field">
+          <label>Spotify Client ID</label>
+          <input id="spotifyClientId" placeholder="Spotify app client id">
+        </div>
+        <div class="field">
+          <label>Spotify Client Secret</label>
+          <input id="spotifyClientSecret" placeholder="Spotify app client secret">
+        </div>
+        <div class="field">
+          <label>Spotify Redirect URI</label>
+          <input id="spotifyRedirectUri" readonly>
+          <div class="file-path">Use this in your Spotify app settings.</div>
+        </div>
+        <div class="field">
+          <label>YouTube client_secret.json file</label>
+          <input id="youtubeSecretFile" type="file" accept=".json,application/json">
+          <div class="file-path" id="youtubeFileName">No file selected</div>
+        </div>
+        <div class="field">
+          <label>Or paste client_secret.json</label>
+          <textarea id="youtubeSecretText" placeholder='{"installed": {...}}'></textarea>
+        </div>
+      </div>
+      <div class="actions" style="margin-top: 14px;">
+        <button class="btn btn-primary" id="saveConfigBtn">Save And Continue</button>
+        <button class="btn btn-secondary" id="cancelConfigBtn">Cancel</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     let activeJob = null;
     const logEl = document.getElementById('log');
@@ -289,10 +584,24 @@ DASHBOARD_TEMPLATE = """
     const spotifyStatusEl = document.getElementById('spotifyStatus');
     const youtubeStatusEl = document.getElementById('youtubeStatus');
     const stateDetailsEl = document.getElementById('stateDetails');
+    const configBannerEl = document.getElementById('configBanner');
+    const configModalEl = document.getElementById('configModal');
+    const configModalNoteEl = document.getElementById('configModalNote');
+    const spotifyClientIdEl = document.getElementById('spotifyClientId');
+    const spotifyClientSecretEl = document.getElementById('spotifyClientSecret');
+    const spotifyRedirectUriEl = document.getElementById('spotifyRedirectUri');
+    const youtubeSecretFileEl = document.getElementById('youtubeSecretFile');
+    const youtubeSecretTextEl = document.getElementById('youtubeSecretText');
+    const youtubeFileNameEl = document.getElementById('youtubeFileName');
+    const saveConfigBtn = document.getElementById('saveConfigBtn');
+    const cancelConfigBtn = document.getElementById('cancelConfigBtn');
     const startBtn = document.getElementById('startBtn');
     const cancelBtn = document.getElementById('cancelBtn');
     const connectSpotifyBtn = document.getElementById('connectSpotify');
     const connectYoutubeBtn = document.getElementById('connectYoutube');
+    let pendingConnectService = null;
+    let pendingConnectButton = null;
+    let loginPopup = null;
 
     function appendLog(line) {
       logEl.textContent += line + '\n';
@@ -323,10 +632,20 @@ DASHBOARD_TEMPLATE = """
       apiReadyEl.textContent = state.ready ? 'Credentials ready' : `Missing: ${(state.missing || []).join(', ')}`;
       stateDetailsEl.textContent = state.ready
         ? 'Both account logins can be connected from the UI.'
-        : 'Fix the missing credentials before attempting login.';
+        : 'This app is online. Click connect, then configure the missing OAuth details in the popup if needed.';
       startBtn.disabled = !(spotifyReady && youtubeReady && state.ready);
-      connectSpotifyBtn.disabled = !state.ready;
-      connectYoutubeBtn.disabled = !state.ready;
+
+      connectSpotifyBtn.disabled = false;
+      connectYoutubeBtn.disabled = false;
+      connectSpotifyBtn.textContent = 'Connect Spotify';
+      connectYoutubeBtn.textContent = 'Connect YouTube';
+
+      if (!state.ready) {
+        configBannerEl.style.display = 'block';
+        configBannerEl.innerHTML = '<strong>Login setup required:</strong> Click a connect button, then save the missing OAuth details in the popup. The redirect URI for Spotify is shown in the setup modal.';
+      } else {
+        configBannerEl.style.display = 'none';
+      }
     }
 
     async function loadState() {
@@ -335,22 +654,97 @@ DASHBOARD_TEMPLATE = """
       renderConnectionState(state);
     }
 
-    async function connectService(service, button) {
-      button.disabled = true;
-      button.textContent = 'Connecting...';
+    function openConfigModal(service, missing, redirectUri) {
+      pendingConnectService = service;
+      pendingConnectButton = service === 'spotify' ? connectSpotifyBtn : connectYoutubeBtn;
+      configModalNoteEl.textContent = missing && missing.length
+        ? `Missing: ${missing.join(', ')}. Fill the fields below, save, then the login popup will open automatically.`
+        : 'Enter the OAuth details below, save them to the VM, then the login popup will open automatically.';
+      spotifyRedirectUriEl.value = redirectUri || '';
+      configModalEl.style.display = 'flex';
+    }
+
+    function closeConfigModal() {
+      configModalEl.style.display = 'none';
+      pendingConnectService = null;
+      pendingConnectButton = null;
+    }
+
+    function openAuthPopup(authUrl, service) {
+      const width = 560;
+      const height = 760;
+      const left = Math.max(0, Math.round((window.screen.width - width) / 2));
+      const top = Math.max(0, Math.round((window.screen.height - height) / 2));
+      loginPopup = window.open(authUrl, `${service}-oauth`, `width=${width},height=${height},left=${left},top=${top}`);
+      if (!loginPopup) {
+        appendLog('Popup blocked. Please allow popups for this site and try again.');
+        return false;
+      }
+      return true;
+    }
+
+    async function continueConnectFlow(service) {
       try {
         const response = await fetch(`/api/connect/${service}`, { method: 'POST' });
         const data = await response.json();
         if (!response.ok) {
-          throw new Error(data.error || `Failed to connect ${service}`);
+          openConfigModal(service, data.missing || [], data.redirect_uri);
+          return;
         }
-        appendLog(`${service} connected: ${data.account_name || 'Unknown'}`);
-        await loadState();
+        if (!openAuthPopup(data.auth_url, service)) {
+          return;
+        }
+        appendLog(`${service} login popup opened. Complete sign-in there, then return here.`);
       } catch (err) {
         appendLog(`Error: ${err.message}`);
-      } finally {
-        button.disabled = false;
-        button.textContent = service === 'spotify' ? 'Connect Spotify' : 'Connect YouTube';
+      }
+    }
+
+    async function openConnectSetup(service) {
+      try {
+        appendLog(`Opening ${service} setup...`);
+        const response = await fetch('/api/config');
+        const config = await response.json();
+        openConfigModal(
+          service,
+          [],
+          service === 'spotify' ? config.spotify_redirect_uri : config.youtube_redirect_uri,
+        );
+      } catch (err) {
+        appendLog(`Error: ${err.message}`);
+      }
+    }
+
+    async function saveOAuthConfig() {
+      const service = pendingConnectService;
+      const file = youtubeSecretFileEl.files && youtubeSecretFileEl.files[0];
+      let youtubeJson = youtubeSecretTextEl.value.trim();
+      if (!youtubeJson && file) {
+        youtubeJson = await file.text();
+      }
+
+      const payload = {
+        spotify_client_id: spotifyClientIdEl.value.trim(),
+        spotify_client_secret: spotifyClientSecretEl.value.trim(),
+        spotify_redirect_uri: spotifyRedirectUriEl.value.trim(),
+        youtube_client_secret_json: youtubeJson || null,
+      };
+
+      const response = await fetch('/api/settings', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to save OAuth settings');
+      }
+
+      appendLog('OAuth settings saved. Starting login...');
+      closeConfigModal();
+      await loadState();
+      if (service) {
+        await continueConnectFlow(service);
       }
     }
 
@@ -424,8 +818,29 @@ DASHBOARD_TEMPLATE = """
     }));
     cancelBtn.addEventListener('click', () => cancelSync().catch((err) => appendLog('Error: ' + err.message)));
 
-    connectSpotifyBtn.addEventListener('click', () => connectService('spotify', connectSpotifyBtn));
-    connectYoutubeBtn.addEventListener('click', () => connectService('youtube', connectYoutubeBtn));
+    connectSpotifyBtn.addEventListener('click', () => openConnectSetup('spotify'));
+    connectYoutubeBtn.addEventListener('click', () => openConnectSetup('youtube'));
+    cancelConfigBtn.addEventListener('click', closeConfigModal);
+    saveConfigBtn.addEventListener('click', () => saveOAuthConfig().catch((err) => appendLog('Error: ' + err.message)));
+
+    youtubeSecretFileEl.addEventListener('change', () => {
+      const file = youtubeSecretFileEl.files && youtubeSecretFileEl.files[0];
+      youtubeFileNameEl.textContent = file ? file.name : 'No file selected';
+    });
+
+    window.addEventListener('message', async (event) => {
+      if (!event.data || event.data.type !== 'oauth-complete') return;
+      if (event.data.ok) {
+        appendLog(`${event.data.service} login completed: ${event.data.message || 'Connected'}`);
+        await loadState();
+      } else {
+        appendLog(`${event.data.service} login failed: ${event.data.message || 'Unknown error'}`);
+      }
+      if (loginPopup && !loginPopup.closed) {
+        loginPopup.close();
+      }
+      loginPopup = null;
+    });
 
     loadState().catch((err) => {
       apiReadyEl.textContent = 'Could not load state';
@@ -445,6 +860,12 @@ def root():
 @app.get("/live/")
 def live_dashboard():
     return render_template_string(DASHBOARD_TEMPLATE)
+
+
+@app.get("/projects/spotify-to-yt/live")
+@app.get("/projects/spotify-to-yt/live/")
+def live_dashboard_public():
+  return render_template_string(DASHBOARD_TEMPLATE)
 
 
 @app.get("/health")

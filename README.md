@@ -1,9 +1,12 @@
 # ytspotify
-A clean, GUI-based Python script that takes your Spotify playlist (or Liked Songs) and perfectly clones them into a newly generated YouTube playlist.
+A Spotify-to-YouTube sync tool with two interfaces:
+- Desktop GUI (`create_playlist.py`) for local use.
+- Live web dashboard (`web_app.py`) for VM-hosted use behind nginx.
 
 ## Table of Contents
 * [Technologies](#Technologies)
-* [Setup](#LocalSetup)
+* [Local Setup](#LocalSetup)
+* [Live Web Setup](#LiveWebSetup)
 * [Troubleshooting](#Troubleshooting)
 
 ## Technologies
@@ -24,7 +27,7 @@ A clean, GUI-based Python script that takes your Spotify playlist (or Liked Song
     * Copy `.env.example` into a new file called `.env`.
     * Paste your new App's `Client ID` and `Client Secret` into the `.env` file.
 
-3) **Enable Oauth For Youtube (`client_secrets.json`)**   
+3) **Enable OAuth For YouTube (`client_secret.json`)**   
     * You need to authorize your app with Google to create YouTube playlists for you. Just follow the guide here [Set Up Youtube Oauth](https://developers.google.com/youtube/v3/getting-started) to generate a credential file! 
     * Download your `client_secret.json` from the Google Cloud Console and place it in the same directory as this project.
 
@@ -36,11 +39,39 @@ A clean, GUI-based Python script that takes your Spotify playlist (or Liked Song
     * Confirm both account status labels turn green.
     * Click `START SYNC` to clone your music library automatically.
 
+## LiveWebSetup
+This mode is for hosting on your VM with nginx proxying to Flask.
+
+1) **Install dependencies**
+`pip3 install -r requirements.txt`
+
+2) **Spotify App Setup (required)**
+* Go to [Spotify Developer Dashboard](https://developer.spotify.com/dashboard/) and create an app.
+* Add this exact Redirect URI in your Spotify app settings:
+    * `https://alreadytaken.me/api/oauth/spotify/callback`
+* Copy Client ID and Client Secret.
+
+3) **Google OAuth Setup (required for YouTube)**
+* Create OAuth client credentials in Google Cloud.
+* Download `client_secret.json` and place it in this project root.
+
+4) **Run the live dashboard service**
+* The Flask app is intended to run on `127.0.0.1:5000`.
+* nginx should proxy:
+    * `/projects/spotify-to-yt/live/` to `/live/`
+    * `/api/` to Flask `/api/`
+
+5) **Connect from the UI**
+* Open `https://alreadytaken.me/projects/spotify-to-yt/live/`
+* Click `Connect Spotify` or `Connect YouTube`.
+* The modal lets you enter missing OAuth settings on the fly.
+* After saving, the dashboard opens the OAuth popup and updates account state when login completes.
+
 ## Account Login UI
 * Spotify and YouTube sign-in are now explicit steps in the app UI.
 * The app shows which Spotify and YouTube accounts are currently connected.
 * `START SYNC` stays disabled until both accounts are connected.
-* You can reconnect either account at any time with the reconnect buttons.
+* You can reconnect either account at any time from the connect buttons.
 
 ## Oracle VM Hosting (Project Hub)
 * The site files live on the VM Desktop at `/home/ubuntu/Desktop/alreadytaken.me`.

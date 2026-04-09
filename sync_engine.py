@@ -31,6 +31,16 @@ class SpotifyToYoutubeEngine:
         self.youtube_account_name = None
         self._lock = threading.Lock()
 
+    def set_spotify_client(self, client, account_name):
+        with self._lock:
+            self.spotify_client = client
+            self.spotify_account_name = account_name
+
+    def set_youtube_client(self, client, account_name):
+        with self._lock:
+            self.youtube_client = client
+            self.youtube_account_name = account_name
+
     def check_credentials(self):
         missing = []
         if not os.environ.get("SPOTIPY_CLIENT_ID"):
